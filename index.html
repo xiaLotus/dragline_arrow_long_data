@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>K11 中控室監控</title>
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
   .node {
@@ -45,6 +45,21 @@
   .image-cycling-2 {
     animation: image-cycle-reverse 2s infinite;
   }
+  
+  /* 選擇狀態樣式 */
+  .node-selected {
+    border: 3px solid #3b82f6 !important;
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important;
+    transform: scale(1.02);
+    z-index: 20 !important;
+  }
+  
+  .node-selectable {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+  }
   </style>
 </head>
 <body class="bg-gray-100 p-0 m-0">
@@ -61,20 +76,68 @@
       <h1 class="text-center">K11  中控室</h1>
       
       <!-- 篩選按鈕靠右 -->
-      <div class="flex items-center space-x-2">
-        <button 
-          @click="toggleFilter"
-          :class="[
-            'px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-            showOnlyAutomation 
-              ? 'bg-blue-500 text-white shadow-md hover:bg-blue-600' 
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          ]"
-        >
-          {{ showOnlyAutomation ? '顯示全部' : '只顯示自動化' }}
-        </button>
-        <div class="text-xs text-gray-500">
-          {{ showOnlyAutomation ? `自動化站點: ${automationCount}` : `總站點: ${nodes.length}` }}
+      <div class="flex items-center space-x-3">
+        <!-- 選擇狀態顯示 -->
+        <div v-if="selectedNodes.length > 0" class="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
+          <div class="font-medium">已選擇: {{ selectedNodes.length }} 個站點</div>
+          <button @click="clearSelection" class="text-red-500 hover:text-red-700 text-xs mt-1">清除選擇</button>
+        </div>
+        
+        <!-- 下拉式選單 -->
+        <div class="relative">
+          <button 
+            @click="toggleDropdown($event)"
+            :class="[
+              'flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 border-2',
+              getFilterButtonStyle()
+            ]"
+          >
+            <span>{{ getFilterLabel() }}</span>
+            <svg 
+              :class="['ml-2 h-4 w-4 transition-transform duration-200', showDropdown ? 'rotate-180' : '']"
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
+          </button>
+          
+          <!-- 下拉選單 -->
+          <div 
+            v-show="showDropdown"
+            @click="stopPropagation($event)"
+            class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1"
+          >
+            <button
+              v-for="option in filterOptions"
+              :key="option.value"
+              @click="selectFilterOption(option.value, $event)"
+              :class="[
+                'w-full text-left px-4 py-3 text-sm transition-colors duration-150 flex items-center',
+                currentFilter === option.value 
+                  ? 'bg-blue-50 text-blue-700 border-r-4 border-blue-500' 
+                  : 'text-gray-700 hover:bg-gray-50'
+              ]"
+            >
+              <div 
+                :class="[
+                  'w-3 h-3 rounded-full mr-3',
+                  option.color
+                ]"
+              ></div>
+              <div>
+                <div class="font-medium">{{ option.label }}</div>
+                <div class="text-xs text-gray-500">{{ option.count }} 個站點</div>
+              </div>
+            </button>
+          </div>
+        </div>
+        
+        <!-- 統計信息 -->
+        <div class="text-xs text-gray-500 bg-gray-100 px-3 py-2 rounded-lg">
+          <div class="font-medium">{{ getFilterLabel() }}</div>
+          <div>{{ getFilteredCount() }} / {{ nodes.length }} 站點</div>
         </div>
       </div>
     </div>
@@ -106,19 +169,28 @@
             marker-end="url(#arrowhead)"
           />
           
-          <!-- 特殊直角箭頭 - 動態計算轉彎位置 -->
-          <template v-if="shouldShowSpecialArrows">
-            <!-- 動態生成轉彎箭頭 -->
+          <!-- 動態生成轉彎箭頭 -->
+          <template v-for="arrow in getCornerArrows()" :key="`corner-${arrow.fromId}-${arrow.toId}`">
+            <!-- 使用單一路徑繪製完整的轉角箭頭 -->
             <path
-              v-for="arrow in getCornerArrows()"
-              :key="`corner-${arrow.fromId}-${arrow.toId}`"
-              :d="getArrowPath(arrow.fromId, arrow.toId, arrow.direction)"
+              :d="getCompleteCornerPath(arrow.fromId, arrow.toId, arrow.direction)"
               stroke="#e91e63"
-              stroke-width="3"
+              stroke-width="2"
               fill="none"
               marker-end="url(#arrowhead-pink)"
             />
           </template>
+          
+          <!-- 固定轉角箭頭 - 在正常模式下顯示 -->
+          <template v-if="!showOnlyAutomation">
+            <!-- 動態生成的轉角箭頭已經在上面處理 -->
+          </template>
+          
+          <!-- 自動化模式下的轉角箭頭 -->
+          <template v-if="showOnlyAutomation">
+            <!-- 動態生成的轉角箭頭已經在上面處理 -->
+          </template>
+          
         </svg>
 
         <!-- 節點容器 -->
@@ -142,14 +214,16 @@
             v-for="(node, index) in filteredNodes"
             :key="node.id"
             :class="[
-              'node bg-white border-2 shadow-md text-center font-normal text-gray-700 text-xs py-1 flex flex-col justify-start items-center absolute cursor-move z-10',
+              'node bg-white border-2 shadow-md text-center font-normal text-gray-700 text-xs py-1 flex flex-col justify-start items-center absolute cursor-pointer z-10 node-selectable transition-all duration-200',
               {
                 'border-blue-500': !node.outerlight_color || node.outerlight_color === 'blue' || node.outerlight_color === 'blue-500',
                 'border-4 border-blinking-amber': node.outerlight_color === 'amber' || node.outerlight_color === 'amber-500' || node.outerlight_color === 'amber-600',
-                'border-4 border-blinking-red': node.outerlight_color === 'rose-300' || node.outerlight_color === 'rose-400'
+                'border-4 border-blinking-red': node.outerlight_color === 'rose-300' || node.outerlight_color === 'rose-400',
+                'node-selected': isNodeSelected(node.id)
               }
             ]"
             :style="{ top: node.top + 'px', left: node.left + 'px' }"
+            @click="toggleNodeSelection(node.id, $event)"
             @mousedown="startDrag($event, index)"
             style="width: 125px; height: 100px; border-radius: 0.375rem; overflow: hidden;"
           >
@@ -219,33 +293,87 @@
       data() {
         return {
           nodes: [],
+          selectedNodes: [], // 新增：儲存選中的節點ID
           lastUpdate: null,
           nextUpdate: null,
           containerWidth: 1450,
           containerHeight: 550,
           offset: { x: 0, y: 0 },
           draggingIndex: null,
+          isDragging: false, // 新增：追蹤是否正在拖拽
           lines: [],
-          showOnlyAutomation: false
+          showOnlyAutomation: false,
+          currentFilter: 'all',
+          showDropdown: false,
+          filterOptions: [
+            { 
+              value: 'all', 
+              label: '全部站點', 
+              color: 'bg-gray-400',
+              count: 0
+            },
+            { 
+              value: 'front', 
+              label: '前段', 
+              color: 'bg-green-400',
+              count: 0
+            },
+            { 
+              value: 'middle', 
+              label: '中後段', 
+              color: 'bg-orange-400',
+              count: 0
+            },
+            { 
+              value: 'automation', 
+              label: '自動化', 
+              color: 'bg-blue-400',
+              count: 0
+            }
+          ]
         };
       },
       computed: {
         filteredNodes() {
-          if (this.showOnlyAutomation) {
-            const automationNodes = this.nodes.filter(node => node.automation === 'V');
-            // 按照原本的流程順序排序（根據 ID）
-            const sortedNodes = automationNodes.sort((a, b) => a.id - b.id);
-            // 重新定位到前面的位置
-            return this.repositionToFront(sortedNodes);
+          let filtered = this.nodes;
+          
+          switch (this.currentFilter) {
+            case 'front':
+              filtered = this.nodes.filter(node => node.stage === '前段');
+              break;
+            case 'middle':
+              filtered = this.nodes.filter(node => node.stage === '中後段');
+              break;
+            case 'automation':
+              filtered = this.nodes.filter(node => node.automation === 'V');
+              break;
+            default:
+              filtered = this.nodes;
           }
-          return this.nodes;
+          
+          // 如果不是顯示全部，則重新排列節點
+          if (this.currentFilter !== 'all') {
+            const sortedNodes = filtered.sort((a, b) => a.id - b.id);
+            const repositioned = this.repositionToFront(sortedNodes);
+            
+            // 延遲執行視圖跳轉，確保節點已重新排列
+            setTimeout(() => {
+              this.autoJumpToStage();
+            }, 50);
+            
+            return repositioned;
+          }
+          
+          return filtered;
         },
         automationCount() {
           return this.nodes.filter(node => node.automation === 'V').length;
         },
-        shouldShowSpecialArrows() {
-          // 在兩種模式下都顯示特殊箭頭，只要相關節點存在
-          return true;
+        frontStageCount() {
+          return this.nodes.filter(node => node.stage === '前段').length;
+        },
+        middleStageCount() {
+          return this.nodes.filter(node => node.stage === '中後段').length;
         }
       },
       mounted() {
@@ -256,8 +384,37 @@
         window.addEventListener("mousemove", this.onDrag);
         window.addEventListener("mouseup", this.endDrag);
         window.addEventListener("resize", this.calculateOptimalLayout);
+        // 點擊外部關閉下拉選單
+        window.addEventListener("click", this.closeDropdown);
       },
       methods: {
+        // 新增：檢查節點是否被選中
+        isNodeSelected(nodeId) {
+          return this.selectedNodes.includes(nodeId);
+        },
+        
+        // 新增：切換節點選擇狀態
+        toggleNodeSelection(nodeId, event) {
+          // 如果正在拖拽，不進行選擇
+          if (this.isDragging) return;
+          
+          event.stopPropagation();
+          
+          const index = this.selectedNodes.indexOf(nodeId);
+          if (index > -1) {
+            // 如果已選中，則取消選擇
+            this.selectedNodes.splice(index, 1);
+          } else {
+            // 如果未選中，則添加到選擇列表
+            this.selectedNodes.push(nodeId);
+          }
+        },
+        
+        // 新增：清除所有選擇
+        clearSelection() {
+          this.selectedNodes = [];
+        },
+        
         calculateOptimalLayout() {
           const availableWidth = window.innerWidth - 120;
           const availableHeight = window.innerHeight - 64 - 100 - 40;
@@ -300,6 +457,192 @@
           this.updateLines();
         },
         
+        repositionToFront(filteredNodes) {
+          // 複製節點避免修改原始數據
+          const repositionedNodes = filteredNodes.map((node, index) => ({ 
+            ...node,
+            // 重新編號為連續的 ID
+            displayId: index + 1,
+            // 保留原始 ID 用於其他用途
+            originalId: node.id
+          }));
+          
+          const nodeWidth = 125;
+          const nodeHeight = 110;
+          // 使用與原本佈局相同的間距
+          const availableWidth = window.innerWidth - 120;
+          const availableHeight = window.innerHeight - 64 - 100 - 40;
+          const cols = 11;
+          const rows = 5;
+          const minGapX = 8;
+          const minGapY = 25;
+          const idealGapX = Math.max(minGapX, (availableWidth - cols * nodeWidth) / (cols - 1));
+          const idealGapY = Math.max(minGapY, (availableHeight - rows * nodeHeight) / (rows - 1));
+          
+          repositionedNodes.forEach((node, index) => {
+            const row = Math.floor(index / cols);
+            const col = index % cols;
+            
+            // 使用與原本相同的蛇形排列邏輯
+            if (row % 2 === 0) {
+              // 偶數行：從左到右
+              node.left = col * (nodeWidth + idealGapX);
+            } else {
+              // 奇數行：從右到左
+              node.left = (cols - 1 - col) * (nodeWidth + idealGapX);
+            }
+            node.top = row * (nodeHeight + idealGapY);
+          });
+          
+          // 篩選模式時自動居中顯示
+          this.$nextTick(() => {
+            this.centerFilteredNodes(repositionedNodes);
+          });
+          
+          return repositionedNodes;
+        },
+        
+        // 新增：將篩選的節點居中顯示
+        centerFilteredNodes(nodes) {
+          if (!nodes.length || this.currentFilter === 'all') return;
+          
+          setTimeout(() => {
+            // 重置任何之前的變換
+            const nodeContainer = document.querySelector('.relative[style*="top: 25px"]');
+            if (nodeContainer) {
+              nodeContainer.style.transform = 'translate(0px, 0px)';
+            }
+          }, 100);
+        },
+        
+        toggleFilter() {
+          this.showOnlyAutomation = !this.showOnlyAutomation;
+          this.$nextTick(() => {
+            this.updateLines();
+            // 重置視圖位置
+            this.resetViewPosition();
+          });
+        },
+        
+        // 新增：重置視圖位置
+        resetViewPosition() {
+          const nodeContainer = document.querySelector('.relative[style*="top: 25px"]');
+          if (nodeContainer) {
+            nodeContainer.style.transition = 'transform 0.5s ease-in-out';
+            nodeContainer.style.transform = 'translate(0px, 0px)';
+            setTimeout(() => {
+              nodeContainer.style.transition = '';
+            }, 500);
+          }
+        },
+        
+        // 新增：切換下拉選單
+        toggleDropdown(event) {
+          event.stopPropagation();
+          this.showDropdown = !this.showDropdown;
+        },
+        
+        // 新增：阻止事件冒泡
+        stopPropagation(event) {
+          event.stopPropagation();
+        },
+        
+        // 新增：選擇篩選選項
+        selectFilterOption(filterValue, event) {
+          event.stopPropagation();
+          this.currentFilter = filterValue;
+          this.showDropdown = false;
+          
+          // 自動跳轉到對應的 stage 視圖
+          this.$nextTick(() => {
+            this.updateLines();
+          });
+        },
+        
+        // 新增：關閉下拉選單
+        closeDropdown() {
+          this.showDropdown = false;
+        },
+        
+        // 移除複雜的驗證邏輯，直接使用簡化的轉彎箭頭計算
+        autoJumpToStage() {
+          if (this.currentFilter === 'all') {
+            this.resetViewPosition();
+            return;
+          }
+          
+          // 根據篩選條件決定跳轉位置
+          let targetPosition = { x: 0, y: 0 };
+          
+          switch (this.currentFilter) {
+            case 'front':
+              // 前段：跳轉到上方（第一行）
+              targetPosition = { x: 0, y: 50 };
+              break;
+            case 'middle':
+              // 中後段：跳轉到下方（後面幾行）
+              targetPosition = { x: 0, y: -100 };
+              break;
+            case 'automation':
+              // 自動化：居中顯示
+              targetPosition = { x: 0, y: 0 };
+              break;
+          }
+          
+          // 應用平滑跳轉動畫
+          const nodeContainer = document.querySelector('.relative[style*="top: 25px"]');
+          if (nodeContainer) {
+            nodeContainer.style.transition = 'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+            nodeContainer.style.transform = `translate(${targetPosition.x}px, ${targetPosition.y}px)`;
+            
+            // 清除動畫效果，但保持位置
+            setTimeout(() => {
+              nodeContainer.style.transition = '';
+            }, 800);
+          }
+        },
+        
+        getFilterLabel() {
+          const option = this.filterOptions.find(opt => opt.value === this.currentFilter);
+          return option ? option.label : '全部站點';
+        },
+        
+        getFilterButtonStyle() {
+          switch (this.currentFilter) {
+            case 'front':
+              return 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100';
+            case 'middle':
+              return 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100';
+            case 'automation':
+              return 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100';
+            default:
+              return 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100';
+          }
+        },
+        
+        getFilteredCount() {
+          return this.filteredNodes.length;
+        },
+        
+        updateFilterCounts() {
+          this.filterOptions.forEach(option => {
+            switch (option.value) {
+              case 'all':
+                option.count = this.nodes.length;
+                break;
+              case 'front':
+                option.count = this.frontStageCount;
+                break;
+              case 'middle':
+                option.count = this.middleStageCount;
+                break;
+              case 'automation':
+                option.count = this.automationCount;
+                break;
+            }
+          });
+        },
+        
         fetchAndRender() {
           console.log('🔄 正在撈取資料...');
           fetch('http://127.0.0.1:5000/nodes')
@@ -313,6 +656,7 @@
             .then(data => {
               console.log('✅ 資料撈取成功，共有節點：', data.length);
               this.nodes = data;
+              this.updateFilterCounts();
               this.calculateOptimalLayout();
               const now = new Date();
               now.setMilliseconds(0);
@@ -367,6 +711,7 @@
           }
           
           this.calculateOptimalLayout();
+          this.updateFilterCounts();
           const now = new Date();
           this.lastUpdate = this.getNowTime(now);
           console.log('✅ 生成了55個測試節點');
@@ -397,56 +742,10 @@
           }, interval);
         },
         
-        repositionToFront(automationNodes) {
-          // 複製節點避免修改原始數據
-          const repositionedNodes = automationNodes.map(node => ({ ...node }));
-          
-          const nodeWidth = 125;
-          const nodeHeight = 110;
-          // 使用與原本佈局相同的間距
-          const availableWidth = window.innerWidth - 120;
-          const availableHeight = window.innerHeight - 64 - 100 - 40;
-          const cols = 11;
-          const rows = 5;
-          const minGapX = 8;
-          const minGapY = 25;
-          const idealGapX = Math.max(minGapX, (availableWidth - cols * nodeWidth) / (cols - 1));
-          const idealGapY = Math.max(minGapY, (availableHeight - rows * nodeHeight) / (rows - 1));
-          
-          repositionedNodes.forEach((node, index) => {
-            const row = Math.floor(index / cols);
-            const col = index % cols;
-            
-            // 使用與原本相同的蛇形排列邏輯
-            if (row % 2 === 0) {
-              // 偶數行：從左到右
-              node.left = col * (nodeWidth + idealGapX);
-            } else {
-              // 奇數行：從右到左
-              node.left = (cols - 1 - col) * (nodeWidth + idealGapX);
-            }
-            node.top = row * (nodeHeight + idealGapY);
-          });
-          
-          return repositionedNodes;
-        },
-        
-        toggleFilter() {
-          this.showOnlyAutomation = !this.showOnlyAutomation;
-          this.$nextTick(() => {
-            this.updateLines();
-          });
-        },
-        
-        hasSpecialConnection(fromId, toId) {
-          // 檢查兩個節點是否都在當前顯示的節點中
-          const fromNode = this.filteredNodes.find(n => n.id === fromId);
-          const toNode = this.filteredNodes.find(n => n.id === toId);
-          return fromNode && toNode;
-        },
-        
         startDrag(e, index) {
           if (e.target.classList.contains('select-text') || e.target.closest('.select-text')) return;
+          
+          this.isDragging = false; // 初始化拖拽狀態
           this.draggingIndex = index;
           const node = this.filteredNodes[index];
           this.offset.x = e.clientX - node.left;
@@ -455,6 +754,7 @@
 
         onDrag(e) {
           if (this.draggingIndex !== null) {
+            this.isDragging = true; // 標記為拖拽中
             const node = this.filteredNodes[this.draggingIndex];
             const boxWidth = 125;
             const boxHeight = 110;
@@ -473,21 +773,105 @@
         },
         
         endDrag() {
+          // 延遲重置拖拽狀態，避免影響點擊事件
+          setTimeout(() => {
+            this.isDragging = false;
+          }, 50);
           this.draggingIndex = null;
         },
         
-        getArrowPath(fromId, toId, direction) {
-          let fromNode, toNode;
+        getCompleteCornerPath(fromId, toId, direction) {
+          const fromNode = this.filteredNodes.find(n => n.id === fromId);
+          const toNode = this.filteredNodes.find(n => n.id === toId);
           
-          if (this.showOnlyAutomation) {
-            // 在自動化模式下，使用重新排列後的節點位置
-            fromNode = this.filteredNodes.find(n => n.id === fromId);
-            toNode = this.filteredNodes.find(n => n.id === toId);
+          if (!fromNode || !toNode) return '';
+          
+          const nodeWidth = 125;
+          const nodeHeight = 110;
+          
+          const fromNodeLeft = fromNode.left + 60;
+          const fromNodeTop = fromNode.top;
+          const toNodeLeft = toNode.left + 60;
+          const toNodeTop = toNode.top;
+          
+          if (direction === 'right') {
+            // 右側轉角：從節點右側出來，向右延伸，向下轉，再向左進入下一個節點的右側
+            const startX = fromNodeLeft + nodeWidth;
+            const startY = fromNodeTop + nodeHeight / 2;
+            const cornerX = startX + 35;
+            const endX = toNodeLeft + nodeWidth + 2;  // 停在節點右側邊緣外2像素
+            const endY = toNodeTop + nodeHeight / 2;
+            
+            return `M ${startX} ${startY} L ${cornerX} ${startY} L ${cornerX} ${endY} L ${endX} ${endY}`;
           } else {
-            // 在正常模式下，使用原始節點位置
-            fromNode = this.filteredNodes.find(n => n.id === fromId);
-            toNode = this.filteredNodes.find(n => n.id === toId);
+            // 左側轉角：從節點左側出來，向左延伸，向下轉，再向右進入下一個節點的左側
+            const startX = fromNodeLeft;
+            const startY = fromNodeTop + nodeHeight / 2;
+            const cornerX = startX - 35;
+            const endX = toNodeLeft - 2;  // 停在節點左側邊緣外2像素
+            const endY = toNodeTop + nodeHeight / 2;
+            
+            return `M ${startX} ${startY} L ${cornerX} ${startY} L ${cornerX} ${endY} L ${endX} ${endY}`;
           }
+        },
+        
+        getCornerArrows() {
+          const corners = [];
+          const visibleNodes = this.filteredNodes;
+          const cols = 11;
+          
+          if (this.currentFilter !== 'all') {
+            // 篩選模式：只在特定位置生成轉彎箭頭
+            const totalNodes = visibleNodes.length;
+            
+            // 明確定義轉彎位置：每行的第11個節點(索引10, 21, 32, 43)轉向下一行第1個節點
+            const turnPositions = [
+              { from: 10, to: 11, direction: 'right' },  // 第1行末 → 第2行頭
+              { from: 21, to: 22, direction: 'left' },   // 第2行末 → 第3行頭  
+              { from: 32, to: 33, direction: 'right' },  // 第3行末 → 第4行頭
+              { from: 43, to: 44, direction: 'left' }    // 第4行末 → 第5行頭
+            ];
+            
+            for (const pos of turnPositions) {
+              // 只有當節點數量足夠時才生成轉彎箭頭
+              if (pos.to < totalNodes) {
+                const fromNode = visibleNodes[pos.from];
+                const toNode = visibleNodes[pos.to];
+                
+                if (fromNode && toNode) {
+                  corners.push({
+                    fromId: fromNode.id,
+                    toId: toNode.id,
+                    direction: pos.direction
+                  });
+                }
+              }
+            }
+          } else {
+            // 正常模式：只在最左側和最右側產生轉彎箭頭
+            // 根據您的圖片，這些是固定的轉彎位置
+            const edgeConnections = [
+              { fromId: 11, toId: 12, direction: 'right' },  // 右側轉彎
+              { fromId: 22, toId: 23, direction: 'left' },   // 左側轉彎
+              { fromId: 33, toId: 34, direction: 'right' },  // 右側轉彎
+              { fromId: 44, toId: 45, direction: 'left' }    // 左側轉彎
+            ];
+            
+            for (const conn of edgeConnections) {
+              const fromNode = visibleNodes.find(n => n.id === conn.fromId);
+              const toNode = visibleNodes.find(n => n.id === conn.toId);
+              if (fromNode && toNode) {
+                corners.push(conn);
+              }
+            }
+          }
+          
+          return corners;
+        },
+        
+        getArrowPath(fromId, toId, direction) {
+          const fromNode = this.filteredNodes.find(n => n.id === fromId);
+          const toNode = this.filteredNodes.find(n => n.id === toId);
           
           if (!fromNode || !toNode) return '';
           
@@ -518,6 +902,77 @@
           }
         },
         
+        getCornerArrow(fromId, toId, direction) {
+          const fromNode = this.filteredNodes.find(n => n.id === fromId);
+          const toNode = this.filteredNodes.find(n => n.id === toId);
+          
+          if (!fromNode || !toNode) return null;
+          
+          const nodeWidth = 125;
+          const nodeHeight = 110;
+          
+          const fromNodeLeft = fromNode.left + 60;
+          const fromNodeTop = fromNode.top;
+          const toNodeLeft = toNode.left + 60;
+          const toNodeTop = toNode.top;
+          
+          if (direction === 'right') {
+            // 從右側節點的右邊出來
+            const startX = fromNodeLeft + nodeWidth;
+            const startY = fromNodeTop + nodeHeight / 2;
+            const rightX = startX + 35;
+            const endX = toNodeLeft;
+            const endY = toNodeTop + nodeHeight / 2;
+            
+            // 水平線段：從節點右側延伸
+            const horizontal = `M ${startX} ${startY} L ${rightX} ${startY}`;
+            // 垂直線段：向下連接
+            const vertical = `M ${rightX} ${startY} L ${rightX} ${endY}`;
+            
+            return { horizontal, vertical };
+          } else {
+            // 從左側節點的左邊出來
+            const startX = fromNodeLeft;
+            const startY = fromNodeTop + nodeHeight / 2;
+            const leftX = startX - 35;
+            const endX = toNodeLeft + nodeWidth;
+            const endY = toNodeTop + nodeHeight / 2;
+            
+            // 水平線段：從節點左側延伸
+            const horizontal = `M ${startX} ${startY} L ${leftX} ${startY}`;
+            // 垂直線段：向下連接
+            const vertical = `M ${leftX} ${startY} L ${leftX} ${endY}`;
+            
+            return { horizontal, vertical };
+          }
+        },
+        
+        getEdgeArrow(nodeId, side) {
+          const node = this.filteredNodes.find(n => n.id === nodeId);
+          if (!node) return '';
+          
+          const nodeWidth = 125;
+          const nodeHeight = 110;
+          const nodeLeft = node.left + 60;
+          const nodeTop = node.top;
+          
+          if (side === 'right-left') {
+            // 從左側進入節點
+            const endX = nodeLeft;
+            const endY = nodeTop + nodeHeight / 2;
+            const startX = endX - 35;
+            return `M ${startX} ${endY} L ${endX} ${endY}`;
+          } else if (side === 'left-right') {
+            // 從右側進入節點
+            const endX = nodeLeft + nodeWidth;
+            const endY = nodeTop + nodeHeight / 2;
+            const startX = endX + 35;
+            return `M ${startX} ${endY} L ${endX} ${endY}`;
+          }
+          
+          return '';
+        },
+        
         updateLines() {
           const boxWidth = 125;
           const boxHeight = 110;
@@ -527,14 +982,39 @@
           const cornerArrows = this.getCornerArrows();
           const cornerConnections = new Set(cornerArrows.map(arrow => `${arrow.fromId}-${arrow.toId}`));
 
-          if (this.showOnlyAutomation) {
-            // 自動化模式：根據實際排列順序連接，跳過轉彎箭頭
+          if (this.currentFilter !== 'all') {
+            // 篩選模式：按蛇形佈局邏輯連接節點
+            const cols = 11;
+            
             for (let i = 0; i < visibleNodes.length - 1; i++) {
               const source = visibleNodes[i];
               const target = visibleNodes[i + 1];
+              const row = Math.floor(i / cols);
+              const col = i % cols;
               
               // 跳過轉彎箭頭的連接
               if (cornerConnections.has(`${source.id}-${target.id}`)) {
+                continue;
+              }
+              
+              // 檢查是否在同一行
+              const nextRow = Math.floor((i + 1) / cols);
+              if (row !== nextRow) {
+                continue; // 跨行連接由轉彎箭頭處理
+              }
+              
+              // 檢查是否應該連接
+              let shouldConnect = false;
+              
+              if (row % 2 === 0) {
+                // 偶數行：從左到右，檢查不是行末
+                shouldConnect = (col < cols - 1);
+              } else {
+                // 奇數行：從右到左，檢查不是行首
+                shouldConnect = (col > 0);
+              }
+              
+              if (!shouldConnect) {
                 continue;
               }
               
@@ -543,17 +1023,21 @@
               const tx = target.left + boxWidth / 2;
               const ty = target.top + boxHeight / 2;
 
-              const dx = tx - sx;
-              const dy = ty - sy;
-              const angle = Math.atan2(dy, dx);
-
-              const offsetX = Math.cos(angle) * (boxWidth / 2);
-              const offsetY = Math.sin(angle) * (boxHeight / 2);
-
-              const x1 = sx + offsetX;
-              const y1 = sy + offsetY;
-              const x2 = tx - offsetX;
-              const y2 = ty - offsetY;
+              let x1, y1, x2, y2;
+              
+              if (row % 2 === 0) {
+                // 偶數行：從左到右連接
+                x1 = sx + boxWidth / 2;
+                y1 = sy;
+                x2 = tx - boxWidth / 2;
+                y2 = ty;
+              } else {
+                // 奇數行：從右到左連接
+                x1 = sx - boxWidth / 2;
+                y1 = sy;
+                x2 = tx + boxWidth / 2;
+                y2 = ty;
+              }
 
               this.lines.push({ x1, y1, x2, y2 });
             }
@@ -591,60 +1075,6 @@
               }
             }
           }
-        },
-        
-        getCornerArrows() {
-          const corners = [];
-          const visibleNodes = this.filteredNodes;
-          const cols = 11;
-          
-          if (this.showOnlyAutomation) {
-            // 自動化模式：根據實際排列計算轉彎箭頭
-            for (let i = 0; i < visibleNodes.length; i++) {
-              const row = Math.floor(i / cols);
-              const col = i % cols;
-              
-              // 檢查是否是行末節點且有下一行
-              const isLastInRow = (col === cols - 1) || (i === visibleNodes.length - 1);
-              const nextRowStartIndex = (row + 1) * cols;
-              
-              if (isLastInRow && nextRowStartIndex < visibleNodes.length) {
-                const currentNode = visibleNodes[i];
-                const nextRowFirstNode = visibleNodes[nextRowStartIndex];
-                
-                if (currentNode && nextRowFirstNode) {
-                  // 根據行數決定轉彎方向
-                  const direction = row % 2 === 0 ? 'right' : 'left';
-                  corners.push({
-                    fromId: currentNode.id,
-                    toId: nextRowFirstNode.id,
-                    direction: direction
-                  });
-                }
-              }
-            }
-          } else {
-            // 正常模式：使用原始的固定轉彎邏輯
-            const specialConnections = [
-              { fromId: 11, toId: 12, direction: 'right' },
-              { fromId: 22, toId: 23, direction: 'left' },
-              { fromId: 33, toId: 34, direction: 'right' },
-              { fromId: 44, toId: 45, direction: 'left' }
-            ];
-            
-            for (const conn of specialConnections) {
-              if (this.hasSpecialConnection(conn.fromId, conn.toId)) {
-                corners.push(conn);
-              }
-            }
-          }
-          
-          return corners;
-        },
-        
-        getNodePosition(nodeId, nodeList) {
-          const node = nodeList.find(n => n.id === nodeId);
-          return node ? { left: node.left, top: node.top } : { left: 0, top: 0 };
         }
       }
     }).mount("#app");
